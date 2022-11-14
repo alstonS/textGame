@@ -4,6 +4,7 @@ It relies on the `text_menu` package, which is not yet on PyPi,
 """
 
 import os
+from http.client import OK
 import requests
 
 from textapp.text_app import get_single_opt, URL, METHOD
@@ -16,6 +17,7 @@ MENU_URL = ''
 
 CONTINUE = 1
 HALT = 0
+ERROR = -1
 
 API_SERVER_URL = "GAME_API_URL"
 LOCAL_HOST = "http://127.0.0.1:8000"
@@ -40,10 +42,19 @@ def run_menu(session, server, route=None, menu=None, form=None):
     """
     The caller must pass *either* `route` OR `menu`.
     """
-    if menu is None:
-        menu = session.get(f"{server}{route}")
-    # at this point we should check for 404 etc.
-    opt = get_single_opt(menu.json())
+    print(f"route = {server}{route}")
+    status = ERROR
+    try:
+        if menu is None:
+            menu_resp = session.get(f"{server}{route}")
+            status = menu_resp.status_code
+            menu = menu_resp.json()
+    except Exception as e:
+        print(str(e))
+    if status != OK:
+        return ERROR
+    print(f'{menu=}')
+    opt = get_single_opt(menu)
     # no URL means exit!
     if not opt.get(URL):
         return HALT
@@ -53,14 +64,14 @@ def run_menu(session, server, route=None, menu=None, form=None):
         if not result:
             print(f"Get method failed with code: {result.status_code}")
             exit(1)
-        print(result)
+        print(result.content)
         json_ret = result.json()
         if json_ret[TYPE] == DATA:
             display_data_page(session, server, json_ret)
         elif json_ret[TYPE] == FORM:
             handle_form(session, server, json_ret)
         elif json_ret[TYPE] == MENU:
-            run_menu(server, menu=json_ret)
+            run_menu(session, server, menu=json_ret)
     elif opt[METHOD] == 'post':
         if form is None:
             print("Data to post missing from post method.")
@@ -75,8 +86,10 @@ def main():
     print(f"API server is {server}")
     session = requests.Session()
     cont = CONTINUE
-    while cont:
+    while cont == CONTINUE:
         cont = run_menu(session, server, route=MAIN_MENU_ROUTE)
+    if cont == ERROR:
+        return ERROR
 
 
 if __name__ == "__main__":
